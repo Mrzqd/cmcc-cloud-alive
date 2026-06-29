@@ -15,6 +15,9 @@ const {
   buildScgAuthPlaintext,
   classifyProtocolRoute,
   createProtocolProgress,
+  createCagHandshakePlan,
+  createConnectInfoDatagram,
+  createLocalKeyDatagram,
   createCemHeaders,
   createProtocolProbeReport,
   decodeZteCagOpentelemetryLocalKeyBody,
@@ -73,6 +76,7 @@ const {
   summarizeZteCagTunnelSequences,
   xorZteCagPassword,
   ZteCagTunnelType,
+  routeIdFromRandomKey,
   zteCagConnectInfoLength,
   zteCagPasswordBlockLength,
 } = require('../lib/protocol');
@@ -341,6 +345,14 @@ const observedControlPayload = Buffer.concat([
   Buffer.from('06000080000000010000002ad54b2f000000000000', 'hex'),
   encodedOpentelemetryPacket,
 ]);
+assert.strictEqual(routeIdFromRandomKey(0x2f4bd52a).toString('hex'), '0000002ad54b2f');
+const plannedLocalKey = createLocalKeyDatagram({
+  randomKey: '0x2f4bd52a',
+  clientKey: 'f8ec01000d4c33479ff0b4e32f9cbcbd',
+  traceId: '89d445d22658b6a6553f6cdedd39f518',
+  spanId: '7ed90069beaa2181',
+});
+assert.strictEqual(plannedLocalKey.datagram.toString('hex'), observedControlPayload.toString('hex'));
 const observedControl = parseZteCagUdpControlDatagram(observedControlPayload);
 assert.strictEqual(observedControl.header.type, 0x06);
 assert.strictEqual(observedControl.header.flags24.toString('hex'), '000080');
@@ -439,6 +451,22 @@ assert.strictEqual(observedConnectInfo.ip, '10.10.2.124');
 assert.strictEqual(observedConnectInfo.vmId, '163c68a9-5e1e-4cba-b9bb-68ad599a8abf');
 assert.strictEqual(observedConnectInfo.username, '6573655444aff86f');
 assert.notStrictEqual(observedConnectInfo.encryptedPassword.toString('hex'), Buffer.alloc(0x40).toString('hex'));
+const plannedConnectInfo = createConnectInfoDatagram({
+  vmcPort: observedConnectInfo.port,
+  vmcIp: observedConnectInfo.ip,
+  vmId: observedConnectInfo.vmId,
+  vmUserName: observedConnectInfo.username,
+}, {
+  randomKey: 0x2f4bd52a,
+  serverKey: observedServerKeyPacket.keyInfo.key,
+  tunnelId: 0x34db0787,
+  aesFlags: 1,
+});
+assert.strictEqual(plannedConnectInfo.payload.length, 0xdc);
+assert.strictEqual(plannedConnectInfo.datagram[0], 0x08);
+assert.strictEqual(plannedConnectInfo.datagram.subarray(8, 15).toString('hex'), '0000002ad54b2f');
+assert.strictEqual(plannedConnectInfo.datagram.readUInt32BE(15), 0x34db0787);
+assert.strictEqual(plannedConnectInfo.parsedConnectInfo.username, observedConnectInfo.username);
 const reencodedObservedConnectInfoWithoutPassword = encodeZteCagRadiusConnectInfoBody({
   vmcPort: observedConnectInfo.port,
   vmcIp: observedConnectInfo.ip,
@@ -456,6 +484,23 @@ assert.strictEqual(
   reencodedObservedConnectInfoWithoutPassword.subarray(0xbc).toString('hex'),
   observedConnectInfoBody.subarray(0xbc).toString('hex'),
 );
+const offlineHandshakePlan = createCagHandshakePlan({
+  vmcPort: observedConnectInfo.port,
+  vmcIp: observedConnectInfo.ip,
+  vmId: observedConnectInfo.vmId,
+  vmUserName: observedConnectInfo.username,
+}, {
+  randomKey: '0x2f4bd52a',
+  clientKey: 'f8ec01000d4c33479ff0b4e32f9cbcbd',
+  traceId: '89d445d22658b6a6553f6cdedd39f518',
+  spanId: '7ed90069beaa2181',
+  serverKey: `0x${observedServerKeyPacket.keyInfo.key.toString(16)}`,
+  tunnelId: '0x34db0787',
+});
+assert.strictEqual(offlineHandshakePlan.safe.sendsPackets, false);
+assert.strictEqual(offlineHandshakePlan.localKey.datagram.length, observedControlPayload.length);
+assert.strictEqual(offlineHandshakePlan.connectInfo.payloadLength, 0xdc);
+assert.strictEqual(offlineHandshakePlan.connectInfo.usernamePresent, true);
 
 const zteReply = parseZteCagConnectReply(Buffer.concat([Buffer.from('c8000000', 'hex'), Buffer.alloc(32)]));
 assert.strictEqual(zteReply.ok, true);

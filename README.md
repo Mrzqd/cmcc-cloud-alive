@@ -75,6 +75,7 @@ node bin/cmcc-cloud-alive.js list
 node bin/cmcc-cloud-alive.js cloud-status <userServiceId>
 node bin/cmcc-cloud-alive.js firm-auth <userServiceId>
 node bin/cmcc-cloud-alive.js protocol-probe <userServiceId> --tls-probe 1
+node bin/cmcc-cloud-alive.js cag-plan <userServiceId>
 ```
 
 Run the HTTP heartbeat candidate once:
@@ -109,6 +110,11 @@ CAG/SPICE.
 `protocol-probe` additionally performs a safe CAG TCP TLS handshake when
 `--tls-probe 1` is used. It does not send desktop auth, SPICE auth, or SDK
 socket commands.
+
+`cag-plan` builds the CAG `local_key` and, when `--server-key` plus
+`--tunnel-id` are supplied from a capture, `connect_info` datagram summaries
+offline. It does not send packets. Hex output is hidden unless `--show-hex 1`
+is explicitly passed.
 
 Use this as the final proof gate after the VM is already powered/running:
 

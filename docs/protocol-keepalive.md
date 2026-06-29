@@ -134,6 +134,60 @@ remaining open connection to `111.31.3.182:8899`. This safely proves the gateway
 is a reachable TLS endpoint, but still does not send the CAG/ZIME auth/control
 sequence.
 
+The first CAG control packets can now be planned offline without network send:
+
+```bash
+sudo node bin/cmcc-cloud-alive.js cag-plan 2663816 \
+  --random-key 0x05297b44 \
+  --client-key 00112233445566778899aabbccddeeff \
+  --trace-id 00112233445566778899aabbccddeeff \
+  --span-id 0011223344556677 \
+  --server-key 0x4f21c3da \
+  --tunnel-id 0x34db0787 \
+  --aes-flags 1
+```
+
+Observed offline plan:
+
+```json
+{
+  "safe": {
+    "sendsPackets": false,
+    "sdkStarted": false,
+    "desktopConnectSent": false,
+    "spiceAuthSent": false
+  },
+  "localKey": {
+    "type": "local_key",
+    "randomKeyHex": "0x05297b44",
+    "routeIdHex": "000000447b2905",
+    "datagram": {
+      "length": 199,
+      "sha256": "8a612448ab3ad6802d7b293bc6a8f63b00be4fb898fe6aabe5f740aabcf1a298"
+    },
+    "connectInfoLength": 220
+  },
+  "connectInfo": {
+    "type": "connect_info",
+    "datagram": {
+      "length": 241,
+      "sha256": "236db48d9d5124d775d76041686bd2da5dfef73d08a48d62c253e79803c52ad5"
+    },
+    "payloadLength": 220,
+    "vmcIp": "10.10.2.243",
+    "vmcPort": 8443,
+    "usernamePresent": true,
+    "passwordPresent": true
+  }
+}
+```
+
+This is an implementation step toward native CAG/ZIME send: the project can now
+construct the observed `local_key` layout exactly for fixed test vectors and
+construct a `connect_info` datagram from `getFirmAuth` plus captured server
+key/tunnel id. It is still fail-closed: `cag-plan` only prints lengths, hashes,
+and non-secret metadata by default.
+
 ## Family HTTP Heartbeat Candidate
 
 The installed family Linux client was audited locally from:

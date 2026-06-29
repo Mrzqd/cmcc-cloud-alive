@@ -20,7 +20,7 @@ const {
   summarizeFirmAuth,
   tokenCheck,
 } = require('../lib/family-api');
-const { createProtocolProbeReport, probeProtocolRoute } = require('../lib/protocol');
+const { createCagHandshakePlan, createProtocolProbeReport, probeProtocolRoute } = require('../lib/protocol');
 
 function usage() {
   console.log(`Usage:
@@ -31,6 +31,7 @@ function usage() {
   cmcc-cloud-alive cloud-status [userServiceId]
   cmcc-cloud-alive firm-auth <userServiceId>
   cmcc-cloud-alive protocol-probe <userServiceId> [--tls-probe 1] [--timeout-ms 5000]
+  cmcc-cloud-alive cag-plan <userServiceId> [--random-key HEX] [--server-key HEX] [--tunnel-id HEX] [--show-hex 0]
   cmcc-cloud-alive heartbeat <userServiceId>
   cmcc-cloud-alive heartbeat-loop <userServiceId> [--interval-ms 30000] [--stop-on-error 0]
   cmcc-cloud-alive verify-http <userServiceId> [--duration-ms 120000] [--interval-ms 30000] [--wait-powered-ms 0] [--require-sleep-proof 0]
@@ -172,6 +173,26 @@ async function main(argv = process.argv.slice(2)) {
         desktopConnectSent: false,
         spiceAuthSent: false,
       },
+    }, null, 2));
+    return;
+  }
+  if (cmd === 'cag-plan') {
+    const userServiceId = await resolveCachedUserServiceId(args[0]?.startsWith('--') ? '' : args[0]);
+    const auth = await getFirmAuth(userServiceId);
+    const plan = createCagHandshakePlan(auth, {
+      randomKey: readOption(args, '--random-key', undefined),
+      clientKey: readOption(args, '--client-key', undefined),
+      traceId: readOption(args, '--trace-id', undefined),
+      spanId: readOption(args, '--span-id', undefined),
+      serverKey: readOption(args, '--server-key', undefined),
+      tunnelId: readOption(args, '--tunnel-id', undefined),
+      aesFlags: readOption(args, '--aes-flags', undefined),
+      showHex: readOption(args, '--show-hex', '0'),
+    });
+    console.log(JSON.stringify({
+      userServiceId,
+      authSummary: summarizeFirmAuth(auth),
+      plan,
     }, null, 2));
     return;
   }
