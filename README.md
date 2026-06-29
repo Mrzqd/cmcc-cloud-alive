@@ -45,15 +45,17 @@ Implemented and tested:
 - Dynamic CAG tunnel `word0` detection.
 - Decoding for the observed CAG chain:
   `local_key -> server_key/tunnelId -> connect_info -> connect_reply 200`.
+- Native sender for the verified CAG UDP control path through
+  `connect_reply code=200`, without starting official SDK binaries.
 - Pcap analyzers for loopback SPICE and external CAG/ZIME traffic.
 
 Not complete yet:
 
 - standalone `keepalive` command that carries SPICE over CAG/ZIME without SDK;
 - ZIME reliable UDP sequencing, ACK, retransmit, and close implementation;
-- production sender for the Linux CAG route.
-- long-duration proof that HTTP heartbeat alone prevents family cloud PC sleep
-  while not occupying/kicking the normal official client session.
+- DISPLAY_INIT-level proof on the Linux family CAG route;
+- long-duration proof that the protocol path prevents family cloud PC sleep
+  while not occupying or kicking the normal official client session.
 
 The current code is intentionally fail-closed around unproven auth/tunnel
 sending paths.
@@ -78,10 +80,9 @@ node bin/cmcc-cloud-alive.js protocol-probe <userServiceId> --tls-probe 1
 node bin/cmcc-cloud-alive.js cag-plan <userServiceId>
 ```
 
-The SMS login flow is intentionally aligned with the previous `yidongyun`
-family-edition SOHO API implementation. It is reused only to obtain and cache
-the account login state needed by the protocol work; it is not the keepalive
-mechanism.
+The SMS login flow is intentionally aligned with the previous family-edition
+SOHO API implementation. It is reused only to obtain and cache the account
+login state needed by the protocol work; it is not the keepalive mechanism.
 
 If a legacy login already exists, import it instead of requesting another SMS
 code:
@@ -205,6 +206,7 @@ Run analyzer against a mounted capture:
 
 ```bash
 docker run --rm -v "$PWD/captures:/captures:ro" \
+  --name cmcc-cloud-alive-analyze \
   cmcc-cloud-alive:local \
   analyze-cag /captures/cag.pcap --limit 80
 ```
@@ -229,6 +231,7 @@ read-only instead of copying secrets into the image:
 
 ```bash
 docker run --rm \
+  --name cmcc-cloud-alive-heartbeat \
   -v /etc/yidongyun/state.json:/etc/yidongyun/state.json:ro \
   cmcc-cloud-alive:local heartbeat <userServiceId>
 ```
@@ -242,6 +245,10 @@ CMCC_USER_SERVICE_ID=<userServiceId> CMCC_INTERVAL_MS=30000 \
 docker compose logs -f cmcc-cloud-alive-loop
 docker compose --profile loop stop cmcc-cloud-alive-loop
 ```
+
+The Docker image, compose services, containers, and volumes use
+`cmcc-cloud-alive*` names. They intentionally do not reuse the legacy
+`yidongyun*` names.
 
 ## Development Notes
 

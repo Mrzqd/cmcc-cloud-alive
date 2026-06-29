@@ -5,7 +5,9 @@ const crypto = require('crypto');
 const fs = require('fs');
 const {
   createLocalKeyDatagram,
+  looksLikeZteCagPreflightDatagram,
   parseZteCagDatagram,
+  parseZteCagPreflightDatagram,
 } = require('../lib/protocol');
 
 function usage() {
@@ -52,8 +54,9 @@ function parseClassicEthernetPcap(file) {
   if (buffer.length < 24) throw new Error('pcap file is too short');
   const magic = buffer.readUInt32LE(0);
   if (magic !== 0xa1b2c3d4 && magic !== 0xd4c3b2a1) {
-    throw new Error('only classic little-endian Ethernet pcap files are supported');
+    throw new Error('only classic little-endian pcap files are supported');
   }
+  const linkType = buffer.readUInt32LE(20);
 
   let offset = 24;
   const packets = [];
@@ -63,10 +66,19 @@ function parseClassicEthernetPcap(file) {
     const capturedLength = buffer.readUInt32LE(offset + 8);
     const packetOffset = offset + 16;
     offset = packetOffset + capturedLength;
-    if (capturedLength < 34) continue;
-    if (buffer.readUInt16BE(packetOffset + 12) !== 0x0800) continue;
+    let ipOffset;
+    if (linkType === 1) {
+      if (capturedLength < 34) continue;
+      if (buffer.readUInt16BE(packetOffset + 12) !== 0x0800) continue;
+      ipOffset = packetOffset + 14;
+    } else if (linkType === 276) {
+      if (capturedLength < 40) continue;
+      if (buffer.readUInt16BE(packetOffset) !== 0x0800) continue;
+      ipOffset = packetOffset + 20;
+    } else {
+      throw new Error(`unsupported pcap link type: ${linkType}`);
+    }
 
-    const ipOffset = packetOffset + 14;
     const ipHeaderLength = (buffer[ipOffset] & 0x0f) * 4;
     const protocol = buffer[ipOffset + 9];
     if (protocol !== 17) continue;
@@ -157,13 +169,42 @@ function summarizeUdpControl(packet, parsed, remoteHost) {
   return base;
 }
 
+function summarizePreflight(packet, remoteHost) {
+  const preflight = parseZteCagPreflightDatagram(packet.payload);
+  return {
+    time: packetTime(packet),
+    direction: direction(packet, remoteHost),
+    source: `${packet.sourceIp}:${packet.sourcePort}`,
+    destination: `${packet.destinationIp}:${packet.destinationPort}`,
+    payloadLength: packet.payload.length,
+    payloadSha256: sha256Hex(packet.payload),
+    typeName: preflight.directionHint === 'client_probe' ? 'preflight_probe' : 'preflight_echo',
+    probeBodyHex: preflight.probeBodyHex,
+    echoTailHex: preflight.echoTailHex,
+  };
+}
+
 function extractHandshake(file, args) {
   const packets = parseClassicEthernetPcap(file).filter((packet) => inTimeWindow(packet, args));
   const remoteHost = firstRemoteHost(packets);
   const events = [];
+  const preflight = [];
+  const pendingPreflightTails = new Set();
 
   for (const packet of packets) {
     if (!packet.payload.length) continue;
+    if (looksLikeZteCagPreflightDatagram(packet.payload)) {
+      const candidate = summarizePreflight(packet, remoteHost);
+      if (candidate.typeName === 'preflight_probe') {
+        pendingPreflightTails.add(candidate.echoTailHex);
+        preflight.push(candidate);
+        continue;
+      }
+      if (pendingPreflightTails.has(candidate.echoTailHex)) {
+        preflight.push(candidate);
+        continue;
+      }
+    }
     const parsed = parseZteCagDatagram(packet.payload);
     if (!parsed.udpControl) continue;
     const type = parsed.udpControl.header.type;
@@ -177,6 +218,12 @@ function extractHandshake(file, args) {
   const connectInfo = events.find((event) => event.type === 0x08);
   const connectReply = events.find((event) => event.type === 0x09 && event.connectReply);
   const ready = events.filter((event) => event.type === 0x01 || event.type === 0x02);
+  const clientReady = ready.find((event) => event.direction === 'client->cag' && event.type === 0x01);
+  const serverPeerReady = ready.find((event) => event.direction === 'cag->client' && event.type === 0x02);
+  const clientPeerConfirm = ready.find((event) => event.direction === 'client->cag' && event.type === 0x02);
+  const handshakePreflight = localKey
+    ? preflight.filter((event) => Number(event.time) <= Number(localKey.time)).slice(-2)
+    : preflight.slice(0, 2);
 
   let localKeyRebuild = null;
   if (localKey) {
@@ -201,8 +248,11 @@ function extractHandshake(file, args) {
     file,
     packets: packets.length,
     remoteHost,
+    preflight: handshakePreflight,
+    preflightTotal: preflight.length,
     events,
     handshake: {
+      preflight: handshakePreflight,
       localKey,
       serverKey,
       connectInfo,
@@ -221,6 +271,12 @@ function extractHandshake(file, args) {
       connectInfoSequence: connectInfo?.sequence,
       connectInfoControlWord: connectInfo?.controlWord,
       aesFlags: '1',
+    } : null,
+    readyPlanArgs: clientReady ? {
+      clientReadySequence: hex32(clientReady.sequence),
+      serverPeerReadySequence: serverPeerReady ? hex32(serverPeerReady.sequence) : undefined,
+      peerConfirmSequence: clientPeerConfirm ? hex32(clientPeerConfirm.sequence) : undefined,
+      readyControlWord: clientReady.controlWord,
     } : null,
   };
 }

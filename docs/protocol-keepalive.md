@@ -618,6 +618,13 @@ times out waiting for `peer_ready`; a short tcpdump captured the outgoing
 because the ready sequence is derived from `connect_reply`/ZIME state rather
 than fixed constants, or because a pre-ZIME control step is still missing.
 
+The official Linux client also sends periodic 26-byte CAG preflight probes on
+another UDP source port. The server replies by echoing the 14-byte tail. This is
+now parsed by `extract-cag-handshake` as `preflight_probe/preflight_echo`, but
+the capture shows it continues periodically after the main handshake, so it is
+currently treated as connectivity/NAT evidence rather than proof of a missing
+auth step.
+
 Time-window analysis around the synchronized display success window shows the
 external CAG/ZIME packet families active during the local SPICE events:
 

@@ -62,11 +62,13 @@ const {
   encodeZteCagUdpControlDatagram,
   encodeZteCagUdpControlHeader,
   isProtocolKeepaliveSuccess,
+  looksLikeZteCagPreflightDatagram,
   looksLikeZteCagTunnelDatagram,
   readDerObjectLength,
   normalizeProtocolConnectInfo,
   parseZteCagDatagram,
   parseZteCagConnectReply,
+  parseZteCagPreflightDatagram,
   parseZteCagTunnelDatagram,
   parseZteCagUdpControlDatagram,
   parseScgAuthResponse,
@@ -199,6 +201,14 @@ const ztecDatagram = parseZteCagDatagram(Buffer.from('5a54454306007c020a0a2e2700
 assert.strictEqual(ztecDatagram.hasZtec, true);
 assert.strictEqual(ztecDatagram.ztecOffset, 0);
 assert.strictEqual(ztecDatagram.hasTlsRecord, false);
+assert.strictEqual(looksLikeZteCagPreflightDatagram(Buffer.from('5a54454306007c020a0a2e2700001a1da6040000000033b2151d', 'hex')), true);
+const cagPreflight = parseZteCagPreflightDatagram(Buffer.from('5a54454306007c020a0a2e2700001a1da6040000000033b2151d', 'hex'));
+assert.strictEqual(cagPreflight.directionHint, 'client_probe');
+assert.strictEqual(cagPreflight.probeBodyHex, '7c020a0a2e27');
+assert.strictEqual(cagPreflight.echoTailHex, '00001a1da6040000000033b2151d');
+const cagPreflightEcho = parseZteCagPreflightDatagram(Buffer.from('00001a1da6040000000033b2151d', 'hex'));
+assert.strictEqual(cagPreflightEcho.directionHint, 'cag_echo');
+assert.strictEqual(cagPreflightEcho.echoTailHex, '00001a1da6040000000033b2151d');
 
 const zteTunnelDatagram = parseZteCagDatagram(Buffer.from(
   'e1db878d81000150000000000000000000000005020000001603010200010001fc03039f152d897da44b',

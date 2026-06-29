@@ -2,6 +2,7 @@ services:
   cmcc-cloud-alive:
     build: .
     image: cmcc-cloud-alive:local
+    container_name: cmcc-cloud-alive-cli
     command: ["help"]
     environment:
       CMCC_ALIVE_STATE: /state/state.json
@@ -13,6 +14,7 @@ services:
     profiles: ["loop"]
     build: .
     image: cmcc-cloud-alive:local
+    container_name: cmcc-cloud-alive-loop
     command: ["heartbeat-loop", "${CMCC_USER_SERVICE_ID:-}", "--interval-ms", "${CMCC_INTERVAL_MS:-30000}"]
     restart: unless-stopped
     environment:
