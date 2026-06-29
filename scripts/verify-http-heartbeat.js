@@ -2,7 +2,7 @@
 'use strict';
 
 const { spawn } = require('child_process');
-const { heartbeat, isHeartbeatAccepted } = require('../lib/family-api');
+const { cloudStatus, heartbeat, isHeartbeatAccepted } = require('../lib/family-api');
 
 const OFFICIAL_PROCESS_PATTERN = 'bootCypc|uSmartView|chuanyun-vdi-client|yidongyun-keepalive|server/web-server';
 
@@ -137,6 +137,13 @@ function summarizeError(err) {
   };
 }
 
+function isPoweredState(status) {
+  const text = String(status?.vmStatusShow || '');
+  if (!status) return false;
+  if (/关机|休眠|离线|回收|未开机/.test(text)) return false;
+  return true;
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const userServiceId = args._[0];
@@ -161,6 +168,8 @@ async function main() {
       stderr: '',
       error: '',
     },
+    cloudStatusBefore: null,
+    cloudStatusAfter: null,
     heartbeats: [],
     acceptedCount: 0,
     errorCount: 0,
@@ -169,6 +178,11 @@ async function main() {
 
   report.officialProcessesBefore = await pgrepOfficialProcesses();
   report.cagConnectionsBefore = await ssCagConnections(report.cagHost, report.cagPort);
+  try {
+    report.cloudStatusBefore = await cloudStatus(userServiceId);
+  } catch (err) {
+    report.cloudStatusBeforeError = summarizeError(err);
+  }
 
   let tcpdump = null;
   if (report.tcpdump.requested) {
@@ -199,6 +213,11 @@ async function main() {
         msg: response.msg || '',
         businessCode: response.businessCode || '',
       });
+      try {
+        report.heartbeats[report.heartbeats.length - 1].cloudStatus = await cloudStatus(userServiceId);
+      } catch (err) {
+        report.heartbeats[report.heartbeats.length - 1].cloudStatusError = summarizeError(err);
+      }
     } catch (err) {
       report.errorCount++;
       const summary = summarizeError(err);
@@ -227,16 +246,32 @@ async function main() {
 
   report.officialProcessesAfter = await pgrepOfficialProcesses();
   report.cagConnectionsAfter = await ssCagConnections(report.cagHost, report.cagPort);
+  try {
+    report.cloudStatusAfter = await cloudStatus(userServiceId);
+  } catch (err) {
+    report.cloudStatusAfterError = summarizeError(err);
+  }
   report.finishedAt = new Date().toISOString();
   report.finishedAtShanghai = formatShanghai();
   report.noOfficialClientStarted = report.officialProcessesBefore.length === 0 && report.officialProcessesAfter.length === 0;
   report.noCagConnectionObserved = report.cagConnectionsBefore.length === 0 &&
     report.cagConnectionsAfter.length === 0 &&
     report.tcpdump.packetLines.length === 0;
-  report.ok = report.acceptedCount > 0 &&
+  report.httpPathOk = report.acceptedCount > 0 &&
     !report.stoppedByOtherLogin &&
     report.noOfficialClientStarted &&
     report.noCagConnectionObserved;
+  const statusSnapshots = [
+    report.cloudStatusBefore,
+    ...report.heartbeats.map((item) => item.cloudStatus).filter(Boolean),
+    report.cloudStatusAfter,
+  ].filter(Boolean);
+  report.poweredStatusSnapshots = statusSnapshots.filter(isPoweredState).length;
+  report.sleepPreventionProof = report.httpPathOk &&
+    statusSnapshots.length > 0 &&
+    report.poweredStatusSnapshots === statusSnapshots.length &&
+    report.durationMs >= 30 * 60 * 1000;
+  report.ok = report.httpPathOk;
 
   console.log(JSON.stringify(report, null, 2));
   process.exit(report.ok ? 0 : 1);

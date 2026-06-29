@@ -6,11 +6,13 @@ const {
   FamilyApiError,
   assertBusinessOk,
   createSign,
+  findCloudByUserServiceId,
   isHeartbeatAccepted,
   isOtherLoginResponse,
   isSuccessResponse,
   maskPhone,
   maskState,
+  summarizeCloud,
 } = require('../lib/family-api');
 
 assert.strictEqual(maskPhone('18701080357'), '187****0357');
@@ -34,6 +36,26 @@ assert.strictEqual(isOtherLoginResponse({ code: 4043, msg: 'YUN_OTHER_LOGIN' }),
 assert.strictEqual(isOtherLoginResponse({ code: 4041, msg: '当前云电脑处于解锁状态,且无密码' }), false);
 assert.strictEqual(isHeartbeatAccepted({ code: 4041, msg: '当前云电脑处于解锁状态,且无密码' }), true);
 assert.strictEqual(isHeartbeatAccepted({ code: 4043, msg: 'YUN_OTHER_LOGIN' }), false);
+const cloudList = [
+  { userServiceId: 1, vmName: 'a', vmStatus: 1, vmStatusShow: '运行中' },
+  { userServiceId: 2663816, vmName: '家庭云电脑', spuCode: 'zte-cloud-pc', skuName: '家庭版', vmStatus: 16, vmStatusShow: '已关机', serviceStatus: 1 },
+];
+assert.strictEqual(findCloudByUserServiceId(cloudList, '2663816').vmStatusShow, '已关机');
+assert.deepStrictEqual(summarizeCloud(cloudList[1]), {
+  userServiceId: 2663816,
+  vmName: '家庭云电脑',
+  spuCode: 'zte-cloud-pc',
+  skuName: '家庭版',
+  serviceStatus: 1,
+  activeStatus: undefined,
+  activate: undefined,
+  expiredStatus: undefined,
+  vmType: undefined,
+  vmStatus: 16,
+  vmStatusShow: '已关机',
+  consumeTime: undefined,
+  shutDownInterval: undefined,
+});
 assert.strictEqual(assertBusinessOk({ code: 2000, msg: 'SUCCESS' }, 'ok').code, 2000);
 assert.throws(
   () => assertBusinessOk({ code: 4043, msg: 'YUN_OTHER_LOGIN', businessCode: '4043' }, 'heartbeat'),

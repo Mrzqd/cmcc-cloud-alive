@@ -72,6 +72,7 @@ Login with the family-edition SOHO API:
 node bin/cmcc-cloud-alive.js sms-send <phone>
 node bin/cmcc-cloud-alive.js sms-login <phone> <code>
 node bin/cmcc-cloud-alive.js list
+node bin/cmcc-cloud-alive.js cloud-status <userServiceId>
 ```
 
 Run the HTTP heartbeat candidate once:
@@ -87,12 +88,17 @@ node bin/cmcc-cloud-alive.js heartbeat-loop <userServiceId> --interval-ms 30000
 ```
 
 Generate a short verification report that checks heartbeat responses, official
-client processes, and CAG `8899` traffic:
+client processes, CAG `8899` traffic, and cloud-PC status snapshots:
 
 ```bash
 sudo node bin/cmcc-cloud-alive.js verify-http <userServiceId> \
   --duration-ms 120000 --interval-ms 30000
 ```
+
+`verify-http` reports `httpPathOk` for the pure HTTP path and
+`sleepPreventionProof` for the stronger claim that the VM stayed powered during
+a long enough run. A powered-off VM can still return accepted heartbeat
+responses, so `httpPathOk=true` alone is not final keepalive proof.
 
 The heartbeat command is aligned to the family Linux client source: `4043`
 (`YUN_OTHER_LOGIN`) is treated as a hard stop, while other JSON business codes

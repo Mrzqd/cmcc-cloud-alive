@@ -5,6 +5,7 @@ const { spawnSync } = require('child_process');
 const path = require('path');
 const {
   cachedCloudList,
+  cloudStatus,
   FamilyApiError,
   heartbeat,
   importLegacyState,
@@ -23,6 +24,7 @@ function usage() {
   cmcc-cloud-alive sms-login <phone> <code>
   cmcc-cloud-alive list
   cmcc-cloud-alive list-cache
+  cmcc-cloud-alive cloud-status [userServiceId]
   cmcc-cloud-alive heartbeat <userServiceId>
   cmcc-cloud-alive heartbeat-loop <userServiceId> [--interval-ms 30000] [--stop-on-error 0]
   cmcc-cloud-alive verify-http <userServiceId> [--duration-ms 120000] [--interval-ms 30000]
@@ -129,6 +131,11 @@ async function main(argv = process.argv.slice(2)) {
   }
   if (cmd === 'list-cache') {
     printCloudList(cachedCloudList());
+    return;
+  }
+  if (cmd === 'cloud-status') {
+    const userServiceId = await resolveCachedUserServiceId(args[0]?.startsWith('--') ? '' : args[0]);
+    console.log(JSON.stringify(await cloudStatus(userServiceId), null, 2));
     return;
   }
   if (cmd === 'heartbeat') {

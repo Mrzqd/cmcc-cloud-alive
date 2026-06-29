@@ -166,6 +166,14 @@ Observed on 2026-06-30:
   "acceptedCount": 3,
   "errorCount": 0,
   "stoppedByOtherLogin": false,
+  "cloudStatusBefore": {
+    "vmStatus": 16,
+    "vmStatusShow": "已关机"
+  },
+  "cloudStatusAfter": {
+    "vmStatus": 16,
+    "vmStatusShow": "已关机"
+  },
   "officialProcessesBefore": [],
   "officialProcessesAfter": [],
   "cagConnectionsBefore": [],
@@ -176,15 +184,20 @@ Observed on 2026-06-30:
   },
   "noOfficialClientStarted": true,
   "noCagConnectionObserved": true,
+  "httpPathOk": true,
+  "poweredStatusSnapshots": 0,
+  "sleepPreventionProof": false,
   "ok": true
 }
 ```
 
 This evidence proves the short-run HTTP heartbeat path is not the old SDK
-wrapper and does not occupy the observed Linux CAG/ZIME route. It still does
-not prove the final keepalive requirement by itself, because the remaining
-claim is behavioral: the VM must stay awake beyond the normal idle window and
-the normal official client must not be kicked during concurrent use.
+wrapper and does not occupy the observed Linux CAG/ZIME route. It also proves
+why the current response must not be overclaimed: the account's cloud PC was
+already `已关机`, so accepted HTTP heartbeat responses do not prove sleep
+prevention. The remaining claim is behavioral: the VM must be powered/running,
+stay awake beyond the normal idle window, and the normal official client must
+not be kicked during concurrent use.
 
 ## Upstream Repository Audit
 
