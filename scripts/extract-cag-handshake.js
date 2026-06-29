@@ -150,6 +150,7 @@ function summarizeUdpControl(packet, parsed, remoteHost) {
     base.connectReply = {
       ok: control.connectReply.ok,
       code: control.connectReply.code,
+      payloadHex: control.connectReply.raw.toString('hex'),
     };
   }
 
@@ -166,7 +167,7 @@ function extractHandshake(file, args) {
     const parsed = parseZteCagDatagram(packet.payload);
     if (!parsed.udpControl) continue;
     const type = parsed.udpControl.header.type;
-    if (type === 0x06 || type === 0x07 || type === 0x08 || type === 0x09) {
+    if (type === 0x01 || type === 0x02 || type === 0x06 || type === 0x07 || type === 0x08 || type === 0x09) {
       events.push(summarizeUdpControl(packet, parsed, remoteHost));
     }
   }
@@ -175,6 +176,7 @@ function extractHandshake(file, args) {
   const serverKey = events.find((event) => event.type === 0x07 && event.serverKeyHex);
   const connectInfo = events.find((event) => event.type === 0x08);
   const connectReply = events.find((event) => event.type === 0x09 && event.connectReply);
+  const ready = events.filter((event) => event.type === 0x01 || event.type === 0x02);
 
   let localKeyRebuild = null;
   if (localKey) {
@@ -205,6 +207,7 @@ function extractHandshake(file, args) {
       serverKey,
       connectInfo,
       connectReply,
+      ready,
     },
     localKeyRebuild,
     cagPlanArgs: localKey && serverKey ? {

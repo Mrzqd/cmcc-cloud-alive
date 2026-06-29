@@ -20,7 +20,7 @@ const {
   summarizeFirmAuth,
   tokenCheck,
 } = require('../lib/family-api');
-const { createCagHandshakePlan, createProtocolProbeReport, probeProtocolRoute } = require('../lib/protocol');
+const { createCagHandshakePlan, createProtocolProbeReport, probeProtocolRoute, runCagUdpHandshake } = require('../lib/protocol');
 
 function usage() {
   console.log(`Usage:
@@ -32,6 +32,7 @@ function usage() {
   cmcc-cloud-alive firm-auth <userServiceId>
   cmcc-cloud-alive protocol-probe <userServiceId> [--tls-probe 1] [--timeout-ms 5000]
   cmcc-cloud-alive cag-plan <userServiceId> [--random-key HEX] [--server-key HEX] [--tunnel-id HEX] [--local-key-sequence N] [--connect-info-sequence N] [--connect-info-control-word N] [--show-hex 0]
+  cmcc-cloud-alive cag-handshake <userServiceId> [--send-connect-info 0] [--send-ready 0] [--timeout-ms 5000]
   cmcc-cloud-alive heartbeat <userServiceId>
   cmcc-cloud-alive heartbeat-loop <userServiceId> [--interval-ms 30000] [--stop-on-error 0]
   cmcc-cloud-alive verify-http <userServiceId> [--duration-ms 120000] [--interval-ms 30000] [--wait-powered-ms 0] [--require-sleep-proof 0]
@@ -200,6 +201,32 @@ async function main(argv = process.argv.slice(2)) {
     }, null, 2));
     return;
   }
+  if (cmd === 'cag-handshake') {
+    const userServiceId = await resolveCachedUserServiceId(args[0]?.startsWith('--') ? '' : args[0]);
+    const auth = await getFirmAuth(userServiceId);
+    const report = await runCagUdpHandshake(auth, {
+      timeoutMs: readOption(args, '--timeout-ms', 5000),
+      randomKey: readOption(args, '--random-key', undefined),
+      clientKey: readOption(args, '--client-key', undefined),
+      traceId: readOption(args, '--trace-id', undefined),
+      spanId: readOption(args, '--span-id', undefined),
+      localKeySequence: readOption(args, '--local-key-sequence', undefined),
+      sendConnectInfo: readOption(args, '--send-connect-info', '0'),
+      sendReady: readOption(args, '--send-ready', '0'),
+      connectInfoSequence: readOption(args, '--connect-info-sequence', undefined),
+      connectInfoControlWord: readOption(args, '--connect-info-control-word', undefined),
+      aesFlags: readOption(args, '--aes-flags', undefined),
+      clientReadySequence: readOption(args, '--client-ready-sequence', undefined),
+      peerConfirmSequence: readOption(args, '--peer-confirm-sequence', undefined),
+      readyControlWord: readOption(args, '--ready-control-word', undefined),
+    });
+    console.log(JSON.stringify({
+      userServiceId,
+      authSummary: summarizeFirmAuth(auth),
+      report,
+    }, null, 2));
+    return;
+  }
   if (cmd === 'heartbeat') {
     const userServiceId = await resolveCachedUserServiceId(args[0]);
     const response = await heartbeat(userServiceId);
@@ -275,6 +302,9 @@ async function main(argv = process.argv.slice(2)) {
 
 main().catch((err) => {
   console.error(err.message);
+  if (err.report) {
+    console.error(JSON.stringify({ partialReport: err.report }, null, 2));
+  }
   if (err.response) console.error(JSON.stringify(err.response, null, 2));
   process.exit(1);
 });

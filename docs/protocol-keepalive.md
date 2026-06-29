@@ -592,7 +592,31 @@ This establishes the Linux CAG route's first independently parsed state chain:
 getFirmAuth -> local_key -> server_key/tunnelId -> connect_info -> connect_reply 200 -> dynamic-tunnel data
 ```
 
-It is still not standalone keepalive. The unresolved boundary is now after `connect_reply 200`: the ZIME/reliable UDP tunnel must carry TLS/application data correctly until the SPICE main/display sequence reaches the same `DISPLAY_INIT` and surface-message success boundary observed on loopback.
+The standalone sender now reaches the same CAG control-auth boundary without
+starting the official SDK:
+
+```text
+cmcc-cloud-alive cag-handshake 2663816 --send-connect-info 1
+local_key sent
+server_key received
+connect_info sent
+connect_reply code=200
+sdkStarted=false
+desktopConnectSent=false
+spiceAuthSent=false
+```
+
+It is still not standalone keepalive. The unresolved boundary is now after
+`connect_reply 200`: the ZIME/reliable UDP tunnel must carry TLS/application
+data correctly until the SPICE main/display sequence reaches the same
+`DISPLAY_INIT` and surface-message success boundary observed on loopback.
+
+On the current account, `cloud-status` reports `vmStatus=16` / `已关机`.
+Experimental `--send-ready 1` currently reaches `connect_reply 200` and then
+times out waiting for `peer_ready`; a short tcpdump captured the outgoing
+`client_ready` but no server reply. This may be because the VM is powered off,
+because the ready sequence is derived from `connect_reply`/ZIME state rather
+than fixed constants, or because a pre-ZIME control step is still missing.
 
 Time-window analysis around the synchronized display success window shows the
 external CAG/ZIME packet families active during the local SPICE events:
@@ -639,6 +663,7 @@ transport layer: `0x81` data, short `0x82` controls, `0x85` batch/retransmit,
 - `lib/protocol/zte-cag.js`: RADIUS connect-info body parser/encoder, CAG credential AES helper, and password XOR helper verified offline against captured non-sensitive fields.
 - `lib/protocol/zte-cag.js`: conservative tunnel datagram parser and sequence summarizer for observed `0x81/0x82/0x85/0x86/0x87/0x89` packet families, including dynamic tunnel magic values such as `34db0787`.
 - `lib/protocol/zte-cag.js`: UDP control semantic parser for observed `local_key`, `server_key`, `connect_info`, and `connect_reply`, including extraction of dynamic `tunnelId`, server key, AES flags, and connect reply code `200`.
+- `lib/protocol/cag-udp-handshake.js`: native UDP sender for `local_key -> server_key` and explicit `--send-connect-info 1` continuation through `connect_reply 200`, with redacted reports and partial-report timeout diagnostics.
 - `lib/protocol/chuanyun.js`: 24-byte ChuanyunHead frame codec.
 - `lib/protocol/spice.js`: SPICE constants, REDQ link header/request/reply codecs including dynamic DER public-key length, Mini Header codec, full data header codec, DISPLAY_INIT encoder, SET_ACK parser, and ACK/PONG encoders.
 - `lib/protocol/local-spice.js`: Linux local GSpice/proxy ExtInfo parser, client `0x0a channel length` frame parser, local prefixed REDQ server reply parser, and padded server full-data-message parser, verified against sanitized loopback capture fragments.
@@ -646,8 +671,8 @@ transport layer: `0x81` data, short `0x82` controls, `0x85` batch/retransmit,
 - `scripts/analyze-loopback-spice.js`: per-event pcap timestamps for local display success signals, used to correlate loopback plaintext with external CAG tunnel packets.
 - `scripts/analyze-cag-transport.js`: CAG pcap analyzer that emits TCP/UDP event summaries, ZTEC control packets, dynamic tunnel headers, packet families, TLS-record hints, tunnel counts, and optional `--from/--to` time-window filtering.
 - `lib/protocol/connect-info.js`: normalized protocol connect info from `getFirmAuth`.
-- `yidongyun protocol-probe`: fetches SOHO `getFirmAuth`, classifies the returned transport route, optionally probes CAG TCP TLS, and redacts credentials in the report.
-- `yidongyun keepalive --mode protocol`: fetches real auth data, probes CAG TCP TLS without SDK startup, then stops before unimplemented tunnel/SPICE stages.
+- `cmcc-cloud-alive protocol-probe`: fetches SOHO `getFirmAuth`, classifies the returned transport route, optionally probes CAG TCP TLS, and redacts credentials in the report.
+- `cmcc-cloud-alive cag-handshake`: fetches real auth data and performs the verified native CAG UDP control handshake without SDK startup.
 - Web UI scheduler config persists `mode=sdk|protocol`.
 
 ## Current Probe Result
@@ -799,6 +824,7 @@ The protocol mode is not complete until the final verification item passes.
 ## Not Implemented
 
 - Extract or verify SCG AES key/iv for the blog `10800` variant.
+- Derive or verify the Linux CAG `client_ready/peer_ready` sequence rules in a powered/running VM session.
 - Reverse the observed Linux/ZTE CAG UDP reliable datagram sequencing, ACK, retransmission, and close behavior after `connect_reply 200`.
 - Reverse the remaining observed 24-byte ZTE CAG tunnel header field semantics and sequencing.
 - Reverse or instrument `libZIMEDataEngine.so` enough to understand packet-out, ACK, retransmit, and data-channel callbacks.
