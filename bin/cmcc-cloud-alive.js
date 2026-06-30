@@ -49,6 +49,7 @@ function usage() {
   cmcc-cloud-alive extract-cag-handshake <pcap> [--from SEC.USEC] [--to SEC.USEC]
   cmcc-cloud-alive extract-cag-tunnel-flow <pcap> [--from SEC.USEC] [--to SEC.USEC] [--limit N]
   cmcc-cloud-alive extract-zime-native [lib-dir]
+  cmcc-cloud-alive extract-zime-abi [libZIMEDataEngine.so]
   cmcc-cloud-alive analyze-loopback <pcap>
   cmcc-cloud-alive correlate-cag-loopback <cag.pcap> <loopback.pcap> [--window-ms 80] [--limit N]
   cmcc-cloud-alive spice-offline-proof
@@ -315,6 +316,7 @@ async function main(argv = process.argv.slice(2)) {
   if (cmd === 'extract-cag-handshake') return runNodeScript('extract-cag-handshake.js', args);
   if (cmd === 'extract-cag-tunnel-flow') return runNodeScript('extract-cag-tunnel-flow.js', args);
   if (cmd === 'extract-zime-native') return runNodeScript('extract-zime-native-evidence.js', args);
+  if (cmd === 'extract-zime-abi') return runNodeScript('extract-zime-abi.js', args);
   if (cmd === 'analyze-loopback') return runNodeScript('analyze-loopback-spice.js', args);
   if (cmd === 'correlate-cag-loopback') return runNodeScript('correlate-cag-loopback.js', args);
   if (cmd === 'spice-offline-proof') {

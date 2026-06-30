@@ -780,6 +780,7 @@ used as live keepalive success.
 - `scripts/analyze-loopback-spice.js`: per-event pcap timestamps for local display success signals, used to correlate loopback plaintext with external CAG tunnel packets.
 - `scripts/analyze-cag-transport.js`: CAG pcap analyzer that emits TCP/UDP event summaries, ZTEC control packets, dynamic tunnel headers, packet families, TLS-record hints, tunnel counts, and optional `--from/--to` time-window filtering.
 - `scripts/extract-cag-tunnel-flow.js`: focused CAG/ZIME flow extractor for first TLS records, data runs, short-control tails, ACK values, and client-control payload lengths.
+- `scripts/extract-zime-abi.js`: static ZIME C-wrapper ABI evidence extractor for exported `ZIME_*` functions, wrapper handle layout, init/socket/profile offsets, and callback/external-transport setup.
 - `lib/protocol/connect-info.js`: normalized protocol connect info from `getFirmAuth`.
 - `cmcc-cloud-alive protocol-probe`: fetches SOHO `getFirmAuth`, classifies the returned transport route, optionally probes CAG TCP TLS, and redacts credentials in the report.
 - `cmcc-cloud-alive cag-handshake`: fetches real auth data and performs the verified native CAG UDP control handshake without SDK startup.
@@ -938,6 +939,7 @@ The protocol mode is not complete until the final verification item passes.
 - Reverse the observed Linux/ZTE CAG UDP reliable datagram sequencing, ACK, retransmission, and close behavior after `connect_reply 200`.
 - Reverse the remaining observed 24-byte ZTE CAG tunnel header field semantics and sequencing.
 - Reverse or instrument `libZIMEDataEngine.so` enough to understand packet-out, ACK, retransmit, and data-channel callbacks.
+- Build an offline ZIME harness that calls the exported C wrapper API with a fake external transport and records packet-out behavior without contacting CAG.
 - Resolve the UDP/opentelemetry server-key flags versus observed connect-info AES mode mismatch.
 - Carry main-channel REDQ/auth/MAIN_INIT/CHANNELS_LIST through the live CAG/ZIME or SCG transport.
 - Carry display-channel REDQ/auth/DISPLAY_INIT through the live CAG/ZIME or SCG transport.
@@ -978,6 +980,35 @@ The output includes `successPredicate=true`, `sdkStarted=false`, and
 `networkUsed=false`. This advances the local plaintext part of the protocol
 plan, but it is still not final keepalive because the bytes are not yet carried
 through the Linux CAG/ZIME transport.
+
+## ZIME ABI Evidence
+
+The current Linux family client exposes a C wrapper around the native ZIME data
+engine. Extract it with:
+
+```bash
+node bin/cmcc-cloud-alive.js extract-zime-abi
+```
+
+Current static evidence shows:
+
+```text
+ZIME_CreateDataEngine allocates a 0x28-byte wrapper handle.
+handle+0x00 stores the native engine pointer.
+handle+0x08 stores the DataChannelCallback C adapter.
+handle+0x18 stores the ExternalTransport C adapter.
+ZIME_Init copies string pointer/length pairs at 0x08/0x10, 0x18/0x20, and 0x28/0x30.
+ZIME_ReceiveData copies a socket parameter prefix plus a 0x200-byte body and reads offset 0x50.
+ZIME_SendData dispatches with a null profile through vtable offset 0x70.
+ZIME_SendData2 copies profile offsets 0x00, 0x08, 0x10, and 0x18.
+CreateDataChannel requires callback and external_transport to be set first.
+```
+
+This is the strongest current route for replacing the SDK-side ZIME transport:
+drive the native data engine through its exported wrapper in an offline harness,
+capture its `packets_out` behavior, and only then map that behavior to live CAG
+UDP packets. It is still not final protocol keepalive because no live
+`DISPLAY_INIT` has been carried through CAG/ZIME without the SDK.
 
 ## Next Capture Work
 

@@ -48,6 +48,8 @@ Implemented and tested:
 - Native sender for the verified CAG UDP control path through
   `connect_reply code=200`, without starting official SDK binaries.
 - Pcap analyzers for loopback SPICE and external CAG/ZIME traffic.
+- Static ZIME C-wrapper ABI evidence extraction for the installed Linux
+  family client.
 
 Not complete yet:
 
@@ -171,6 +173,19 @@ signals such as CAG bootstrap functions, ZIME data-channel symbols,
 QUIC/SCTP/DTLS strings, ACK/PING/packet scheduling strings, and keepalive
 timers. This is static transport evidence for implementation work; it does not
 run the SDK or send packets.
+
+Extract the narrower ZIME C-wrapper ABI boundary:
+
+```bash
+node bin/cmcc-cloud-alive.js extract-zime-abi
+```
+
+This checks exported `ZIME_*` functions and disassembly evidence for wrapper
+handle layout, `ZIME_Init` parameter offsets, `ZIME_ReceiveData` socket
+parameter copying, `ZIME_SendData`/`ZIME_SendData2` profile handling, and the
+callback/external-transport setup path. It is an offline reverse-engineering
+aid for building the next no-SDK transport harness; it is not live keepalive
+proof.
 
 Use this as the final proof gate after the VM is already powered/running:
 
