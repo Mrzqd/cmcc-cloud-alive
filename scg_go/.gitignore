@@ -1,0 +1,6 @@
+# Build artifact — regenerate with: go build -o cmcc_keepalive .
+/cmcc_keepalive
+/cmcc_keepalive.exe
+
+# Runtime config written by the Python shim (contains credentials)
+/cloud_pc.json
