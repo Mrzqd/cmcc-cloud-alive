@@ -491,4 +491,4 @@ docker compose -f docker/docker-compose.yml up -d --build
 
 感谢 **LinuxDo** 社区的支持！
 
-[![LinuxDo](https://img.shields.io/badge/社区-LinuxDo-blue?style=for-the-badge)](https://linux.do/t/topic/1776670)
+[![LinuxDo](https://img.shields.io/badge/社区-LinuxDo-blue?style=for-the-badge)](https://linux.do/)
