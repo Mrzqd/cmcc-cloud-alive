@@ -7,7 +7,7 @@
 
 > 你不需要会写代码，也不需要手动编辑 json 文件。大多数情况下，只要复制命令、按中文提示选择即可。
 
-**讨论与反馈（LINUX DO）：** [https://linux.do/t/topic/1776670](https://linux.do/t/topic/1776670)
+[![LinuxDo](https://img.shields.io/badge/社区-LinuxDo-blue?style=for-the-badge)](https://linux.do/t/topic/1776670)
 
 ## 这个工具能做什么？
 
@@ -477,6 +477,12 @@ docker compose -f docker/docker-compose.yml up -d --build
 - 协议选择权归用户；空值仅历史回落 ZTE，不强制 SCG。
 - 日志时戳：Asia/Shanghai 完整 `YYYY-MM-DD HH:mm:ss`。
 
-## 社区
+## 社区与支持
 
-本项目发布与讨论帖（LINUX DO）：[https://linux.do/t/topic/1776670](https://linux.do/t/topic/1776670)
+### 🚩 友情链接
+
+感谢 **LinuxDo** 社区的支持！
+
+[![LinuxDo](https://img.shields.io/badge/社区-LinuxDo-blue?style=for-the-badge)](https://linux.do/t/topic/1776670)
+
+本项目发布与讨论帖：https://linux.do/t/topic/1776670
