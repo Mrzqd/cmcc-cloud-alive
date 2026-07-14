@@ -226,6 +226,7 @@ def _choose_username_with_cached(cached, prompt_func):
 
 def cmd_login(args):
     state = core.load_state(args)
+    account_type = core.normalize_account_type(getattr(args, "account_type", None), state)
     cached = state.get("username") or ""
     username = args.username or ""
     if not username:
@@ -238,7 +239,13 @@ def cmd_login(args):
     if not password:
         raise core.CmccError("password is required")
     # 默认保存密码到 ~/.cmcc-cloud-alive/state.json，便于 token 失效时自动重登。
-    _password_login_with_retry(username, password, args.state, save_password=(args.save_password or True))
+    _password_login_with_retry(
+        username,
+        password,
+        args.state,
+        save_password=(args.save_password or True),
+        account_type=account_type,
+    )
 
 
 def cmd_set_profile(args):
@@ -335,7 +342,13 @@ def _interactive_prompt(message, default=None):
     return raw or (default if default is not None else "")
 
 
-def _password_login_with_retry(username, password, state_path, save_password=False):
+def _password_login_with_retry(
+    username,
+    password,
+    state_path,
+    save_password=False,
+    account_type=None,
+):
     """Login with up to ``max_attempts`` retries on wrong password.
 
     Always exits via a clean :class:`core.CmccError` (caught by ``main``) so the
@@ -346,8 +359,13 @@ def _password_login_with_retry(username, password, state_path, save_password=Fal
     current = password
     for attempt in range(1, max_attempts + 1):
         try:
-            auth.password_login(username, current, state_path,
-                                save_password=save_password if attempt == 1 else False)
+            auth.password_login(
+                username,
+                current,
+                state_path,
+                save_password=save_password if attempt == 1 else False,
+                account_type=account_type,
+            )
             return current
         except core.CmccError as err:
             if save_password:
@@ -377,6 +395,19 @@ def _interactive_sleep(seconds, started, run_seconds):
 
 def _interactive_login(args):
     state = core.load_state(args)
+    account_type = getattr(args, "account_type", None)
+    if not account_type:
+        if state.get("accountType") or "isSubAccount" in state:
+            account_type = core.normalize_account_type(None, state)
+        elif getattr(args, "non_interactive", False):
+            account_type = core.ACCOUNT_TYPE_MAIN
+        else:
+            print("请选择账号类型：", flush=True)
+            print("  1. 主账户", flush=True)
+            print("  2. 子账户", flush=True)
+            pick = _interactive_prompt("账号类型", default="1")
+            account_type = core.ACCOUNT_TYPE_SUB if pick == "2" else core.ACCOUNT_TYPE_MAIN
+    account_type = core.normalize_account_type(account_type, state)
     cached = state.get("username") or ""
     username = args.username or ""
     if not username:
@@ -393,7 +424,13 @@ def _interactive_login(args):
             raise core.CmccError("已取消密码输入")
     if not password:
         raise core.CmccError("password is required")
-    password = _password_login_with_retry(username, password, args.state, save_password=True)
+    password = _password_login_with_retry(
+        username,
+        password,
+        args.state,
+        save_password=True,
+        account_type=account_type,
+    )
     return username, password
 
 
@@ -444,6 +481,7 @@ def cmd_interactive(args):
     args_ns = core.argparse.Namespace(state=state_path)
     args_ns.username = args.username
     args_ns.password = args.password
+    args_ns.account_type = getattr(args, "account_type", None)
     args_ns.user_service_id = args.user_service_id
     args_ns.non_interactive = args.non_interactive
 
@@ -1983,6 +2021,12 @@ def build_parser():
     p.add_argument("username", nargs="?", help="account; prompts when omitted")
     p.add_argument("password", nargs="?", help="optional; omit to avoid plaintext shell history")
     p.add_argument(
+        "--account-type",
+        choices=("main", "sub"),
+        default=None,
+        help="login identity: main account (default) or sub account",
+    )
+    p.add_argument(
         "--save-password",
         action="store_true",
         help="兼容参数；当前默认保存到 ~/.cmcc-cloud-alive/state.json 以便 token 失效自动重登",
@@ -2071,6 +2115,7 @@ def build_parser():
     p.add_argument("user_service_id", nargs="?")
     p.add_argument("--username", default=None, help="account phone number; prompt if omitted")
     p.add_argument("--password", default=None, help="password; prompt hidden if omitted (never logged)")
+    p.add_argument("--account-type", choices=("main", "sub"), default=None)
     p.add_argument("--duration", type=int, default=0, help="run seconds; 0 means run forever")
     p.add_argument("--heartbeat-interval", type=int, default=300, help="keepalive round interval seconds")
     p.add_argument("--status-interval", type=int, default=60, help="状态展示间隔秒数；只打印，不触发开机")
@@ -2405,6 +2450,7 @@ def build_parser():
     ip.add_argument("user_service_id", nargs="?")
     ip.add_argument("--username", default=None, help="account phone number; prompt if omitted")
     ip.add_argument("--password", default=None, help="password; prompt hidden if omitted (never logged)")
+    ip.add_argument("--account-type", choices=("main", "sub"), default=None)
     ip.add_argument("--duration", type=int, default=0, help="run seconds; 0 means run forever")
     ip.add_argument("--heartbeat-interval", type=int, default=300, help="keepalive round interval seconds")
     ip.add_argument("--status-interval", type=int, default=60, help="status print interval seconds")
@@ -2965,6 +3011,21 @@ def cmd_simple_repl(args):
         try:
             active_state, existing_profile = _choose_state_profile(args)
             state = core.load_state(active_state)
+            saved_account_type = core.normalize_account_type(None, state)
+            if state.get("accountType") or "isSubAccount" in state:
+                account_type = saved_account_type
+                label = "子账户" if account_type == core.ACCOUNT_TYPE_SUB else "主账户"
+                print(f"使用档案账号类型：{label}", flush=True)
+            else:
+                print("请选择账号类型：", flush=True)
+                print("1. 主账户", flush=True)
+                print("2. 子账户", flush=True)
+                account_pick = _simple_choice("账号类型", choices=("1", "2"), default="1")
+                account_type = (
+                    core.ACCOUNT_TYPE_SUB
+                    if account_pick == "2"
+                    else core.ACCOUNT_TYPE_MAIN
+                )
             cached_username = state.get("username") or ""
             if existing_profile and cached_username:
                 username = cached_username
@@ -2978,13 +3039,16 @@ def cmd_simple_repl(args):
             login_required = True
             if existing_profile and username == cached_username:
                 valid_token, token_response = token.check_token(active_state)
-                if valid_token:
+                if valid_token and account_type == saved_account_type:
                     login_required = False
                     print("档案内token仍有效，跳过重新登录。", flush=True)
                 elif cached_password:
                     password = cached_password
                     code = token_response.get("code") if isinstance(token_response, dict) else ""
-                    print(f"档案内token已失效/不可用(code={code})，使用缓存密码重新登录。", flush=True)
+                    if valid_token:
+                        print("账号类型已切换，使用缓存密码重新登录。", flush=True)
+                    else:
+                        print(f"档案内token已失效/不可用(code={code})，使用缓存密码重新登录。", flush=True)
                 else:
                     password = _simple_input("请输入密码")
             elif cached_password:
@@ -2999,7 +3063,13 @@ def cmd_simple_repl(args):
                     print("密码不能为空。", flush=True)
                     continue
                 print("正在登录...", flush=True)
-                auth.password_login(username, password, active_state, save_password=True)
+                auth.password_login(
+                    username,
+                    password,
+                    active_state,
+                    save_password=True,
+                    account_type=account_type,
+                )
                 print("登录成功。", flush=True)
             items = cloud.list_desktops(active_state)
             if not items:

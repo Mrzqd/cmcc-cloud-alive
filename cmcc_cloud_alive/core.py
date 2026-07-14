@@ -136,6 +136,42 @@ class CmccError(Exception):
         self.response = response
 
 
+ACCOUNT_TYPE_MAIN = "main"
+ACCOUNT_TYPE_SUB = "sub"
+
+
+def normalize_account_type(value=None, state=None):
+    """Normalize the selected login identity to ``main`` or ``sub``.
+
+    Older state files only have ``isSubAccount`` (or neither field), so keep
+    them backward compatible and default to the historical main-account path.
+    """
+    state = state or {}
+    raw = value
+    if raw in (None, ""):
+        raw = state.get("accountType")
+    if raw in (None, "") and "isSubAccount" in state:
+        raw = ACCOUNT_TYPE_SUB if state.get("isSubAccount") else ACCOUNT_TYPE_MAIN
+    if raw in (None, ""):
+        return ACCOUNT_TYPE_MAIN
+    normalized = str(raw).strip().lower().replace("-", "_")
+    aliases = {
+        "main": ACCOUNT_TYPE_MAIN,
+        "main_account": ACCOUNT_TYPE_MAIN,
+        "primary": ACCOUNT_TYPE_MAIN,
+        "主账号": ACCOUNT_TYPE_MAIN,
+        "主账户": ACCOUNT_TYPE_MAIN,
+        "sub": ACCOUNT_TYPE_SUB,
+        "sub_account": ACCOUNT_TYPE_SUB,
+        "child": ACCOUNT_TYPE_SUB,
+        "子账号": ACCOUNT_TYPE_SUB,
+        "子账户": ACCOUNT_TYPE_SUB,
+    }
+    if normalized not in aliases:
+        raise CmccError(f"unsupported account type: {value}; expected main or sub")
+    return aliases[normalized]
+
+
 def sanitize_report_value(value):
     if isinstance(value, dict):
         sanitized = {}
@@ -840,25 +876,42 @@ def ensure_public_key(args=None):
 
 
 def password_login(args):
+    account_type = normalize_account_type(
+        getattr(args, "account_type", None),
+        load_state(args),
+    )
     ensure_public_key(args)
     pub = assert_ok(api_request("/login/publicKey/v1", {"type": 1}, args), "loginPublicKey")["data"]
     encrypted_password = rsa_encrypt_string(args.password, pub)
-    response = api_request("/login/namePwdLogin/v1", {
+    login_path = (
+        "/login/home/namePwdLogin/v1"
+        if account_type == ACCOUNT_TYPE_SUB
+        else "/login/namePwdLogin/v1"
+    )
+    login_state = dict(load_state(args))
+    # A credential login is a new session.  The official request leaves these
+    # headers empty; do not leak a previous/expired identity into the login.
+    login_state["sohoToken"] = ""
+    login_state["userId"] = ""
+    response = api_request(login_path, {
         "username": args.username,
         "password": encrypted_password,
         "verificationCode": args.verification_code or "",
         "randomCode": args.random_code or "",
-    }, args)
+    }, args, state_override=login_state)
     assert_ok(response, "passwordLogin")
     user = response.get("data") or {}
     merge_state({
         "userId": user.get("userId"),
-        "nickname": user.get("nickname") or "",
-        "phone": user.get("phone") or "",
+        "nickname": user.get("nickname") or user.get("subAccount") or "",
+        "phone": user.get("phone") or user.get("mainAccountPhone") or "",
+        "mainAccountPhone": user.get("mainAccountPhone") or "",
+        "subAccount": user.get("subAccount") or "",
         "sohoToken": user.get("sohoToken"),
-        "username": user.get("username") or args.username,
+        "username": user.get("username") or user.get("subAccount") or args.username,
         "isLogined": True,
-        "isSubAccount": False,
+        "isSubAccount": account_type == ACCOUNT_TYPE_SUB,
+        "accountType": account_type,
     }, args)
     print("login ok")
 
@@ -2499,6 +2552,7 @@ def build_parser():
     p.add_argument("password")
     p.add_argument("--verification-code", default="")
     p.add_argument("--random-code", default="")
+    p.add_argument("--account-type", choices=("main", "sub"), default=None)
     p.set_defaults(func=password_login)
 
     p = sub.add_parser("protocol-check")

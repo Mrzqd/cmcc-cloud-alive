@@ -156,6 +156,30 @@ def _mask_username(u: Optional[str]) -> str:
     return s[:3] + "****" + s[-2:]
 
 
+def _account_type(value: Any = None, state: Optional[Dict[str, Any]] = None) -> str:
+    """Web API account-type normalization with old-profile compatibility."""
+    state = state or {}
+    raw = value
+    if raw in (None, ""):
+        raw = state.get("accountType")
+    if raw in (None, "") and "isSubAccount" in state:
+        raw = "sub" if state.get("isSubAccount") else "main"
+    if raw in (None, ""):
+        return "main"
+    normalized = str(raw).strip().lower().replace("-", "_")
+    aliases = {
+        "main": "main",
+        "main_account": "main",
+        "primary": "main",
+        "sub": "sub",
+        "sub_account": "sub",
+        "child": "sub",
+    }
+    if normalized not in aliases:
+        raise ValueError("accountType must be main|sub")
+    return aliases[normalized]
+
+
 def redact_obj(value: Any, key: str = "") -> Any:
     if key and key.lower() in _SENSITIVE_LOWER:
         return "<redacted>"
@@ -495,6 +519,8 @@ def _public_profile(profile_id: str, state: Dict[str, Any], path: Path) -> Dict[
         "id": profile_id,
         "displayName": state.get("displayName") or profile_id,
         "usernameMasked": _mask_username(state.get("username")),
+        "accountType": _account_type(None, state),
+        "isSubAccount": _account_type(None, state) == "sub",
         "desktopLabel": state.get("desktopLabel") or state.get("desktopName") or "",
         "userServiceId": state.get("userServiceId") or "",
         "spuCode": spu,
@@ -567,6 +593,10 @@ async def profiles_create(request: Request) -> JSONResponse:
     display = (body.get("displayName") or body.get("name") or "").strip()
     username = (body.get("username") or "").strip()
     password = body.get("password")  # write-only
+    try:
+        account_type = _account_type(body.get("accountType") or body.get("account_type"))
+    except ValueError as e:
+        return api_error("VALIDATION", str(e))
     client_profile = (body.get("clientProfile") or "linux").strip() or "linux"
     if client_profile not in ("linux", "windows", "mac"):
         return api_error("VALIDATION", "clientProfile must be linux|windows|mac")
@@ -579,6 +609,8 @@ async def profiles_create(request: Request) -> JSONResponse:
     state: Dict[str, Any] = {
         "displayName": display or pid,
         "username": username,
+        "accountType": account_type,
+        "isSubAccount": account_type == "sub",
         "clientProfile": client_profile,
         "createdAt": _now_iso(),
         "updatedAt": _now_iso(),
@@ -663,7 +695,12 @@ async def profiles_delete(request: Request) -> JSONResponse:
     )
 
 
-def _password_login_for_profile(path: Path, username: str, password: str) -> Dict[str, Any]:
+def _password_login_for_profile(
+    path: Path,
+    username: str,
+    password: str,
+    account_type: str,
+) -> Dict[str, Any]:
     """Thin wrapper: auth.password_login writes sohoToken into profile state JSON."""
     from cmcc_cloud_alive.auth import password_login
 
@@ -672,6 +709,7 @@ def _password_login_for_profile(path: Path, username: str, password: str) -> Dic
         password,
         state_path=str(path),
         save_password=True,
+        account_type=account_type,
     )
 
 
@@ -695,6 +733,15 @@ async def profiles_login(request: Request) -> JSONResponse:
     if not isinstance(body, dict):
         body = {}
     state = _read_state(path)
+    previous_account_type = _account_type(None, state)
+    try:
+        account_type = _account_type(
+            body.get("accountType") or body.get("account_type"),
+            state,
+        )
+    except ValueError as e:
+        return api_error("VALIDATION", str(e))
+    account_type_changed = account_type != previous_account_type
     username = (body.get("username") or state.get("username") or "").strip()
     password = body.get("password")
     if password is not None and str(password) == "":
@@ -713,6 +760,8 @@ async def profiles_login(request: Request) -> JSONResponse:
     if body.get("username"):
         state["username"] = str(body["username"]).strip()
         username = state["username"]
+    state["accountType"] = account_type
+    state["isSubAccount"] = account_type == "sub"
     if not username and not (state.get("sohoToken") or state.get("token")):
         return api_error(
             "VALIDATION",
@@ -759,7 +808,7 @@ async def profiles_login(request: Request) -> JSONResponse:
 
     if not username or not password:
         token_present = bool(state.get("sohoToken") or state.get("token"))
-        if token_present:
+        if token_present and not account_type_changed:
             state["lastLoginStatus"] = "session-present"
             _write_state(path, state)
             pub = _public_profile(pid, state, path)
@@ -777,7 +826,7 @@ async def profiles_login(request: Request) -> JSONResponse:
         _write_state(path, state)
         return api_error(
             "VALIDATION",
-            "username and password required for LIVE login",
+            "username and password required for LIVE login or account-type change",
             400,
             next_step="请填写账号和密码后重新登录",
         )
@@ -790,7 +839,13 @@ async def profiles_login(request: Request) -> JSONResponse:
     _write_state(path, state)
 
     try:
-        await asyncio.to_thread(_password_login_for_profile, path, username, str(password))
+        await asyncio.to_thread(
+            _password_login_for_profile,
+            path,
+            username,
+            str(password),
+            account_type,
+        )
     except Exception as e:
         msg = str(e) or e.__class__.__name__
         code_name = "UPSTREAM"

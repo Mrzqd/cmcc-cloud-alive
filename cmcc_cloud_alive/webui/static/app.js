@@ -21,6 +21,7 @@
     logModalPid: null,
     logModalReturnFocus: null,
     composer: {
+      accountType: "main",
       protocol: "ZTE",
       clientProfile: "linux",
       mode: "live",
@@ -199,6 +200,10 @@
     return "中兴";
   }
 
+  function accountTypeLabel(v) {
+    return String(v || "main").toLowerCase() === "sub" ? "子账户" : "主账户";
+  }
+
   function clientLabel(v) {
     const c = String(v || "linux").toLowerCase();
     if (c === "windows") return "Windows";
@@ -244,6 +249,7 @@
         displayName: (p && p.displayName) || "",
         username: "",
         password: "",
+        accountType: (p && p.accountType) || "main",
         protocol: protocol,
         lastOfficialProtocol: protocol,
         clientProfile: (p && p.clientProfile) || "linux",
@@ -258,6 +264,7 @@
     } else if (p) {
       const d = state.drafts[pid];
       if (!d.displayName && p.displayName) d.displayName = p.displayName;
+      if (!d.accountType && p.accountType) d.accountType = p.accountType;
       if (!d.userServiceId && p.userServiceId) d.userServiceId = p.userServiceId;
       if (!d.desktopLabel && p.desktopLabel) d.desktopLabel = p.desktopLabel;
       if (!d.spuCode && p && (p.spuCode || p.spu_code)) {
@@ -755,6 +762,7 @@
     const job = jobOf(p);
     const name = p.displayName || pid;
     const user = p.usernameMasked || "未设置账号";
+    const accountType = d.accountType || p.accountType || "main";
     const usid = d.userServiceId || p.userServiceId || "";
     let deskLabel = d.desktopLabel || p.desktopLabel || "";
     /* resolve label from cached list for card-meta only; never spu on surface */
@@ -796,6 +804,8 @@
       '<p class="card-meta">' +
       esc(user) +
       " · " +
+      esc(accountTypeLabel(accountType)) +
+      " · " +
       esc(protocolLabel(protocol)) +
       " · " +
       esc(deskShort) +
@@ -808,6 +818,9 @@
       "</span>" +
       "</header>" +
       '<div class="card-summary">' +
+      "<div>账号类型<strong>" +
+      esc(accountTypeLabel(accountType)) +
+      "</strong></div>" +
       "<div>云桌面 id<strong title=\"" +
       esc(deskIdText) +
       '">' +
@@ -869,6 +882,7 @@
     const busy = !!state.busy[pid];
     const job = jobOf(p);
     const user = p.usernameMasked || "未设置账号";
+    const accountType = d.accountType || p.accountType || "main";
     const client = p.clientProfile || d.clientProfile || "linux";
     const protocol =
       d.protocol || (p && p.protocol) || (job && job.protocol) || "ZTE";
@@ -891,6 +905,19 @@
       '" data-key="displayName" value="' +
       esc(d.displayName || "") +
       '" /></label>' +
+      '<div class="field span-2"><span>登录类型</span>' +
+      '<div class="seg account-type-seg" role="group" aria-label="登录类型">' +
+      '<button type="button" class="seg-btn' +
+      (accountType === "main" ? " active" : "") +
+      '" data-pid="' +
+      esc(pid) +
+      '" data-key="accountType" data-val="main">主账户</button>' +
+      '<button type="button" class="seg-btn' +
+      (accountType === "sub" ? " active" : "") +
+      '" data-pid="' +
+      esc(pid) +
+      '" data-key="accountType" data-val="sub">子账户</button>' +
+      "</div></div>" +
       '<label class="field"><span>账号</span>' +
       '<input type="text" data-pid="' +
       esc(pid) +
@@ -1111,6 +1138,7 @@
       displayName: ($("#c-displayName") && $("#c-displayName").value.trim()) || "",
       username: ($("#c-username") && $("#c-username").value.trim()) || "",
       password: ($("#c-password") && $("#c-password").value) || "",
+      accountType: state.composer.accountType || "main",
       protocol: state.composer.protocol || "ZTE",
       clientProfile: state.composer.clientProfile || "linux",
       mode: modeApi(state.composer.mode || "live"),
@@ -1148,6 +1176,7 @@
       $("#c-desktop").setAttribute("aria-disabled", "true");
     }
     state.composer = {
+      accountType: "main",
       protocol: "ZTE",
       clientProfile: "linux",
       mode: "live",
@@ -1159,9 +1188,11 @@
       const p = btn.getAttribute("data-protocol");
       const c = btn.getAttribute("data-client");
       const m = btn.getAttribute("data-mode");
+      const a = btn.getAttribute("data-account-type");
       if (p) btn.classList.toggle("active", p === "ZTE");
       if (c) btn.classList.toggle("active", c === "linux");
       if (m) btn.classList.toggle("active", m === "live");
+      if (a) btn.classList.toggle("active", a === "main");
     });
     setComposerMsg("");
     setComposerDesktopLock(false);
@@ -1332,15 +1363,19 @@
 
   async function onSave(pid) {
     const d = ensureDraft(pid);
+    const p = state.profiles.find(function (x) {
+      return x.id === pid;
+    });
     state.busy[pid] = true;
     renderCards();
     try {
-      if (d.username || d.password) {
+      if (d.username || d.password || (p && d.accountType !== p.accountType)) {
         await api("/api/profiles/" + encodeURIComponent(pid) + "/login", {
           method: "POST",
           body: {
             username: d.username || undefined,
             password: d.password || undefined,
+            accountType: d.accountType || "main",
           },
         });
       }
@@ -1393,12 +1428,13 @@
     state.cardMsg[pid] = "";
     renderCards();
     try {
-      if (d.username || d.password) {
+      if (d.username || d.password || (p && d.accountType !== p.accountType)) {
         await api("/api/profiles/" + encodeURIComponent(pid) + "/login", {
           method: "POST",
           body: {
             username: d.username || undefined,
             password: d.password || undefined,
+            accountType: d.accountType || "main",
           },
         });
       }
@@ -1640,20 +1676,17 @@
       const body = {
         username: d.username || undefined,
         password: d.password || undefined,
+        accountType: d.accountType || "main",
         clientProfile: d.clientProfile || undefined,
         protocol: d.protocol || undefined,
         mode: d.mode || undefined,
         displayName: d.displayName || undefined,
       };
-      // best-effort save so /desktops uses fresh creds
-      try {
-        await api("/api/profiles/" + encodeURIComponent(pid), {
-          method: "PUT",
-          body: JSON.stringify(body),
-        });
-      } catch (_) {
-        /* create path may differ; still try desktops */
-      }
+      await api("/api/profiles/" + encodeURIComponent(pid) + "/login", {
+        method: "POST",
+        body: body,
+      });
+      d.password = "";
       await onDesktops(pid);
     } catch (e) {
       const msg = humanError(e, "登录失败");
@@ -1841,6 +1874,7 @@
             displayName: c.displayName || undefined,
             username: c.username,
             password: c.password,
+            accountType: c.accountType || "main",
             clientProfile: c.clientProfile || "linux",
             protocol: (c.protocol || "ZTE").toUpperCase(),
           },
@@ -1855,6 +1889,7 @@
       }
       state.drafts[pid].username = c.username;
       state.drafts[pid].password = c.password;
+      state.drafts[pid].accountType = c.accountType || "main";
       state.drafts[pid].protocol = (c.protocol || "ZTE").toUpperCase();
       state.drafts[pid].lastOfficialProtocol = state.drafts[pid].protocol;
       state.drafts[pid].clientProfile = c.clientProfile;
@@ -1865,7 +1900,11 @@
 
       await api("/api/profiles/" + encodeURIComponent(pid) + "/login", {
         method: "POST",
-        body: { username: c.username, password: c.password },
+        body: {
+          username: c.username,
+          password: c.password,
+          accountType: c.accountType || "main",
+        },
       });
       setComposerMsg("登录成功，正在加载官方云桌面列表…", "ok");
       setComposerDesktopLock(true);
@@ -1957,6 +1996,7 @@
             displayName: c.displayName || undefined,
             username: c.username,
             password: c.password,
+            accountType: c.accountType || "main",
             clientProfile: c.clientProfile || "linux",
             protocol: (c.protocol || "ZTE").toUpperCase(),
           },
@@ -1968,7 +2008,11 @@
         ensureDraft(pid, p);
         await api("/api/profiles/" + encodeURIComponent(pid) + "/login", {
           method: "POST",
-          body: { username: c.username, password: c.password },
+          body: {
+            username: c.username,
+            password: c.password,
+            accountType: c.accountType || "main",
+          },
         });
         setComposerDesktopLock(true);
         try {
@@ -1996,6 +2040,7 @@
       ensureDraft(pid);
       state.drafts[pid].username = c.username;
       state.drafts[pid].password = c.password;
+      state.drafts[pid].accountType = c.accountType || "main";
       state.drafts[pid].protocol = (c.protocol || "ZTE").toUpperCase();
       state.drafts[pid].lastOfficialProtocol = state.drafts[pid].protocol;
       state.drafts[pid].clientProfile = c.clientProfile;
@@ -2287,6 +2332,11 @@
           onDesktops(pid);
           return;
         }
+        if (act === "login" && pid) {
+          ev.preventDefault();
+          onConfigLogin(pid);
+          return;
+        }
         // HARD_GATE#665 D: delete account from config modal (modal is outside #timeline)
         if (act === "delete" && pid) {
           ev.preventDefault();
@@ -2553,6 +2603,16 @@
         const protocol = btn.getAttribute("data-protocol");
         const client = btn.getAttribute("data-client");
         const mode = btn.getAttribute("data-mode");
+        const accountType = btn.getAttribute("data-account-type");
+        if (accountType) {
+          state.composer.accountType = accountType;
+          $$('.composer .seg-btn[data-account-type]').forEach(function (b) {
+            b.classList.toggle(
+              "active",
+              b.getAttribute("data-account-type") === accountType
+            );
+          });
+        }
         if (protocol) {
           state.composer.protocol = protocol;
           $$('.composer .seg-btn[data-protocol]').forEach(function (b) {
